@@ -49,14 +49,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <header className="drawer-bar">
           <div>
             <p className="kicker">Settings</p>
-            <h2 id="settings-title">A key, if you want one</h2>
+            <h2 id="settings-title">The model does the styling</h2>
           </div>
           <button type="button" className="btn ghost" onClick={onClose}>
             Close
           </button>
         </header>
         <p className="lede tight">
-          Atelier already files pieces, pairs colors, and builds outfits on this device. A key is only for naming new photos and writing an extra styling note.
+          Scores, pros, cons, and outfit ideas come only from this model. Photos, names, and the calendar stay in this browser.
         </p>
         <div className="chips" role="group" aria-label="Provider">
           {(Object.keys(PROVIDERS) as ProviderId[]).map((id) => (

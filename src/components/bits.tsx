@@ -48,7 +48,27 @@ export function PieceFigure({ garment, url, className }: { garment: Garment; url
   );
 }
 
-export function Score({ value }: { value: number }) {
-  const tone = value >= 0.78 ? "Easy" : value >= 0.62 ? "Works" : "Bold";
-  return <span className={`score score-${tone.toLowerCase()}`}>{tone}</span>;
+export function ScoreMeter({ score }: { score: number }) {
+  const tone = score >= 80 ? "high" : score >= 55 ? "mid" : "low";
+  return (
+    <div className={`meter meter-${tone}`} aria-label={`Score ${score} out of 100`}>
+      <strong>{score}</strong>
+      <span>/ 100</span>
+    </div>
+  );
+}
+
+export function ProsCons({ pros, cons }: { pros: string[]; cons: string[] }) {
+  return (
+    <div className="pros-cons">
+      <div>
+        <h4>Pros</h4>
+        {pros.length === 0 ? <p className="hint">None listed.</p> : <ul>{pros.map((item) => <li key={item}>{item}</li>)}</ul>}
+      </div>
+      <div>
+        <h4>Cons</h4>
+        {cons.length === 0 ? <p className="hint">None listed.</p> : <ul>{cons.map((item) => <li key={item}>{item}</li>)}</ul>}
+      </div>
+    </div>
+  );
 }

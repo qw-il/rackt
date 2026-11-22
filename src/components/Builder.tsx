@@ -2,29 +2,71 @@ import { useEffect, useMemo, useState } from "react";
 import { useCloset } from "../store";
 import type { Garment } from "../types";
 import { CATEGORIES } from "../types";
-import { describeSelection, orderPieces } from "../lib/stylist";
-import { Score, Swatches } from "./bits";
+import { orderPieces } from "../lib/stylist";
+import type { OutfitReview } from "../types";
+import { rateOutfit } from "../lib/ai";
+import { ProsCons, ScoreMeter, Swatches } from "./bits";
 
 const SLOTS = CATEGORIES.filter((category) => category.id !== "other");
 
 export function Builder() {
-  const { garments, urls, outfits, selection, setSelection, addOutfit, notify } = useCloset();
+  const { garments, urls, outfits, selection, setSelection, addOutfit, settings, notify } = useCloset();
   const [name, setName] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [rating, setRating] = useState(false);
+  const [review, setReview] = useState<OutfitReview | null>(null);
+  const [rateError, setRateError] = useState("");
   const selected = useMemo(
     () => orderPieces(garments.filter((garment) => selection.includes(garment.id))),
     [garments, selection],
   );
-  const described = useMemo(() => describeSelection(selected), [selected]);
+  const palette = useMemo(() => {
+    const colors: string[] = [];
+    for (const garment of selected) {
+      for (const color of garment.colors) {
+        if (!colors.includes(color)) colors.push(color);
+      }
+    }
+    return colors.slice(0, 5);
+  }, [selected]);
 
   useEffect(() => {
-    if (!nameEdited) setName(selected.length ? described.title : "");
-  }, [described.title, nameEdited, selected.length]);
+    if (!nameEdited) setName(selected.length ? selected.slice(0, 2).map((garment) => garment.name).join(" & ") : "");
+  }, [nameEdited, selected]);
 
   function toggle(garment: Garment) {
     setSelection(toggleSelection(selection, garment, garments));
     setNameEdited(false);
+    setReview(null);
+    setRateError("");
+  }
+
+  async function rate() {
+    if (!settings.apiKey) {
+      window.dispatchEvent(new CustomEvent("atelier-settings"));
+      return;
+    }
+    if (selected.length < 2) return;
+    setRating(true);
+    setRateError("");
+    try {
+      const result = await rateOutfit(
+        settings,
+        selected.map((garment) => ({
+          id: garment.id,
+          name: garment.name,
+          category: garment.category,
+          colors: garment.colors,
+        })),
+      );
+      setReview(result.review);
+      if (!nameEdited) setName(result.title);
+    } catch (reason) {
+      setRateError(reason instanceof Error ? reason.message : "The model could not rate this outfit.");
+    } finally {
+      setRating(false);
+    }
   }
 
   async function save() {
@@ -32,9 +74,10 @@ export function Builder() {
     setSaving(true);
     try {
       const outfit = await addOutfit({
-        name: name.trim() || described.title,
+        name: name.trim() || "Untitled look",
         garmentIds: selected.map((garment) => garment.id),
-        note: described.why,
+        note: review?.summary ?? "",
+        review: review ?? undefined,
       });
       notify(`Saved ${outfit.name}.`);
     } finally {
@@ -47,7 +90,7 @@ export function Builder() {
       <header className="page-head">
         <p className="kicker">Builder</p>
         <h1 className="display">Put a look on the board.</h1>
-        <p className="lede">One piece per category, two accessories. The note updates as the colors change.</p>
+        <p className="lede">One piece per category. The model rates the finished outfit from 1 to 100 and lists pros and cons.</p>
       </header>
       <div className="builder">
         <div className="stage-card">
@@ -65,11 +108,13 @@ export function Builder() {
           </div>
           <div className="stage-copy">
             <div className="stage-title">
-              <h2>{described.title}</h2>
-              {selected.length > 1 && <Score value={described.score} />}
+              <h2>{name || "Unrated look"}</h2>
+              {review && <ScoreMeter score={review.score} />}
             </div>
-            <p>{described.why}</p>
-            <Swatches colors={described.palette} />
+            <p>{review?.summary || "Rate this combination. Advice comes from the model, not a built-in color chart."}</p>
+            <Swatches colors={palette} />
+            {review && <ProsCons pros={review.pros} cons={review.cons} />}
+            {rateError && <p className="error">{rateError}</p>}
             <label className="field">
               <span>Outfit name</span>
               <input
@@ -82,6 +127,9 @@ export function Builder() {
               />
             </label>
             <div className="row">
+              <button type="button" className="btn" disabled={selected.length < 2 || rating} onClick={() => void rate()}>
+                {rating ? "Rating…" : settings.apiKey ? "Rate this outfit" : "Add a key to rate"}
+              </button>
               <button type="button" className="btn primary" disabled={selected.length < 2 || saving} onClick={() => void save()}>
                 {saving ? "Saving…" : "Save outfit"}
               </button>
@@ -92,6 +140,8 @@ export function Builder() {
                 onClick={() => {
                   setSelection([]);
                   setNameEdited(false);
+                  setReview(null);
+                  setRateError("");
                 }}
               >
                 Clear
@@ -113,6 +163,8 @@ export function Builder() {
                       setSelection(outfit.garmentIds);
                       setName(outfit.name);
                       setNameEdited(true);
+                      setReview(outfit.review ?? null);
+                      setRateError("");
                     }}
                   >
                     {outfit.name}

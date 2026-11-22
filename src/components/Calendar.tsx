@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useCloset } from "../store";
 import { monthGrid, monthLabel, parseKey, prettyDate, todayKey, WEEKDAYS } from "../lib/dates";
 import { go } from "../nav";
+import { ProsCons, ScoreMeter } from "./bits";
 
 export function Calendar() {
   const { outfits, days, urls, garments, planDay, clearDay, removeOutfit, setSelection } = useCloset();
@@ -72,8 +73,12 @@ export function Calendar() {
           <h2>{prettyDate(selected)}</h2>
           {outfit ? (
             <>
-              <p className="panel-name">{outfit.name}</p>
-              <p>{outfit.note}</p>
+              <div className="stage-title">
+                <p className="panel-name">{outfit.name}</p>
+                {outfit.review && <ScoreMeter score={outfit.review.score} />}
+              </div>
+              <p>{outfit.review?.summary || outfit.note}</p>
+              {outfit.review && <ProsCons pros={outfit.review.pros} cons={outfit.review.cons} />}
               <div className="panel-pieces">
                 {worn.map((garment) => (
                   <img key={garment.id} src={urls[garment.id]} alt={garment.name} />
@@ -113,7 +118,7 @@ export function Calendar() {
                 onClick={() => void planDay(selected, item.id)}
               >
                 <span>{item.name}</span>
-                <span className="choice-meta">{item.garmentIds.length} pieces</span>
+                <span className="choice-meta">{item.review ? `${item.review.score}/100` : `${item.garmentIds.length} pieces`}</span>
               </button>
             ))}
           </div>

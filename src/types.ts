@@ -23,12 +23,20 @@ export type Garment = {
   original?: Blob;
 };
 
+export type OutfitReview = {
+  score: number;
+  summary: string;
+  pros: string[];
+  cons: string[];
+};
+
 export type Outfit = {
   id: string;
   name: string;
   garmentIds: string[];
   note: string;
   createdAt: number;
+  review?: OutfitReview;
 };
 
 export type DayPlan = {

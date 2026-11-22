@@ -3,7 +3,7 @@ import { removeBackground, type Raster } from "../src/lib/background";
 import { suggestCategory } from "../src/lib/categorize";
 import { presentName, readNamedPiece } from "../src/lib/namedPiece";
 import { colorPairings, recommendLooks } from "../src/lib/stylist";
-import { normalizeBase, parseJson } from "../src/lib/ai";
+import { clampScore, normalizeBase, normalizeReview, parseJson } from "../src/lib/ai";
 import type { Garment } from "../src/types";
 
 let failed = 0;
@@ -95,6 +95,11 @@ assert(looks.every((look) => look.garmentIds.every((id) => closet.some((item) =>
 assert(looks.every((look) => look.score >= looks[looks.length - 1].score - 0.001), "looks are ranked by score");
 assert(colorPairings(closet, 3).length > 0, "color pairings are suggested");
 assert(parseJson('```json\n{"intro":"Quiet navy."}\n```').intro === "Quiet navy.", "json fences parse");
+assert(clampScore("104") === 100, "scores clamp to 100");
+assert(clampScore(0) === 1, "scores clamp to 1");
+assert(clampScore("nope") === null, "a missing score is rejected");
+const review = normalizeReview({ score: 82.4, summary: "  Clean. ", pros: ["Navy holds", ""], cons: "not a list" });
+assert(review?.score === 82 && review.summary === "Clean." && review.pros.length === 1 && review.cons.length === 0, "reviews keep a score, a summary, and string lists");
 assert(normalizeBase("https://api.openai.com/v1") === "https://api.openai.com/v1", "openai base is preserved");
 assert(normalizeBase("https://example.com") === "https://example.com/v1", "bare host gains /v1");
 let blocked = false;

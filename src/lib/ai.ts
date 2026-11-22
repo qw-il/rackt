@@ -1,4 +1,4 @@
-import type { AiSettings, Category, ProviderId } from "../types";
+import type { AiSettings, Category, OutfitReview, ProviderId } from "../types";
 
 const STORAGE_KEY = "atelier-settings";
 
@@ -168,45 +168,95 @@ export async function tagGarment(
   return { name, category, note };
 }
 
-export type StyledOutfit = { title: string; ids: string[]; why: string };
+export type RatedOutfit = { title: string; ids: string[]; review: OutfitReview };
+
+const RATE_SHAPE =
+  '{"title": string, "score": number, "summary": string, "pros": string[], "cons": string[]}. score is an integer from 1 to 100. summary is one sentence. pros and cons are three short, specific points each.';
+
+export function clampScore(value: unknown): number | null {
+  const number = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(number)) return null;
+  return Math.max(1, Math.min(100, Math.round(number)));
+}
+
+export function normalizeReview(value: unknown): OutfitReview | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const score = clampScore(record.score);
+  if (score === null) return null;
+  return {
+    score,
+    summary: clip(record.summary, 220),
+    pros: clipList(record.pros),
+    cons: clipList(record.cons),
+  };
+}
+
+export async function rateOutfit(
+  settings: AiSettings,
+  pieces: { id: string; name: string; category: string; colors: string[] }[],
+): Promise<{ title: string; review: OutfitReview }> {
+  const content = await complete(settings, [
+    {
+      role: "system",
+      content: `You rate one real outfit made only from the pieces given. Reply with JSON only: ${RATE_SHAPE} Do not invent pieces. No markdown.`,
+    },
+    { role: "user", content: JSON.stringify({ pieces }) },
+  ]);
+  const parsed = parseJson(content);
+  const review = normalizeReview(parsed);
+  if (!review) throw new AiError("The model did not return a score from 1 to 100.");
+  return { title: clip(parsed.title, 48) || "Rated look", review };
+}
 
 export async function styleAdvice(
   settings: AiSettings,
   pieces: { id: string; name: string; category: string; colors: string[] }[],
-  looks: { title: string; ids: string[]; why: string }[],
-): Promise<{ intro: string; outfits: StyledOutfit[] }> {
+): Promise<{ intro: string; outfits: RatedOutfit[] }> {
   const owned = new Set(pieces.map((piece) => piece.id));
   const content = await complete(settings, [
     {
       role: "system",
       content:
-        'You are a concise personal stylist. Use only the piece ids provided. Reply with JSON only: {"intro": string, "outfits": [{"title": string, "ids": string[], "why": string}]}. intro is one sentence. Return 3 outfits. why is one or two sentences about color. No markdown.',
+        'You are the only stylist for this wardrobe. Use only the piece ids provided. Reply with JSON only: {"intro": string, "outfits": [{"title": string, "ids": string[], "score": number, "summary": string, "pros": string[], "cons": string[]}]}. Return 3 outfits. score is an integer from 1 to 100. summary is one sentence. pros and cons are three short points each. Do not invent pieces. No markdown.',
     },
     {
       role: "user",
       content: JSON.stringify({
         pieces,
-        alreadyConsidered: looks,
-        ask: "Recommend outfits this person can make from these pieces, and say which colors belong together.",
+        ask: "Build three outfits from these pieces. Rate each from 1 to 100 and list pros and cons.",
       }),
     },
   ]);
   const parsed = parseJson(content);
-  const intro = typeof parsed.intro === "string" ? parsed.intro.trim().slice(0, 280) : "";
-  const outfits: StyledOutfit[] = [];
+  const intro = clip(parsed.intro, 280);
+  const outfits: RatedOutfit[] = [];
   const raw = Array.isArray(parsed.outfits) ? parsed.outfits : [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
-    const record = item as { title?: unknown; ids?: unknown; why?: unknown };
+    const record = item as Record<string, unknown>;
     const ids = Array.isArray(record.ids) ? record.ids.filter((id): id is string => typeof id === "string" && owned.has(id)) : [];
-    if (ids.length < 2) continue;
+    const review = normalizeReview(record);
+    if (ids.length < 2 || !review) continue;
     outfits.push({
-      title: typeof record.title === "string" && record.title.trim() ? record.title.trim().slice(0, 48) : "Suggested look",
+      title: clip(record.title, 48) || "Suggested look",
       ids: [...new Set(ids)].slice(0, 6),
-      why: typeof record.why === "string" ? record.why.trim().slice(0, 280) : "",
+      review,
     });
   }
   return { intro, outfits };
+}
+
+function clip(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function clipList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim().slice(0, 140))
+    .slice(0, 4);
 }
 
 export function parseJson(text: string): Record<string, unknown> {

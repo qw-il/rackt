@@ -1,28 +1,37 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useCloset } from "../store";
 import { todayKey } from "../lib/dates";
 import { go } from "../nav";
-import { colorPairings, recommendLooks, type ColorPair } from "../lib/stylist";
-import { styleAdvice, type StyledOutfit } from "../lib/ai";
-import { Score, Swatches } from "./bits";
-import type { Look } from "../types";
+import { styleAdvice, type RatedOutfit } from "../lib/ai";
+import { ProsCons, ScoreMeter } from "./bits";
+import type { OutfitReview } from "../types";
+
+type CardLook = {
+  title: string;
+  garmentIds: string[];
+  review: OutfitReview;
+};
 
 export function Looks() {
   const { garments, urls, outfits, addOutfit, planDay, setSelection, settings, notify } = useCloset();
-  const looks = useMemo(() => recommendLooks(garments, 6), [garments]);
-  const pairs = useMemo(() => colorPairings(garments, 4), [garments]);
   const [asking, setAsking] = useState(false);
   const [intro, setIntro] = useState("");
-  const [aiLooks, setAiLooks] = useState<StyledOutfit[]>([]);
+  const [aiLooks, setAiLooks] = useState<RatedOutfit[]>([]);
   const [aiError, setAiError] = useState("");
+  const rated = outfits.filter((outfit) => outfit.review);
 
-  async function ensureOutfit(look: { title: string; garmentIds: string[]; why: string }) {
+  async function ensureOutfit(look: CardLook) {
     const existing = outfits.find((outfit) => sameSet(outfit.garmentIds, look.garmentIds));
     if (existing) return existing;
-    return addOutfit({ name: look.title, garmentIds: look.garmentIds, note: look.why });
+    return addOutfit({
+      name: look.title,
+      garmentIds: look.garmentIds,
+      note: look.review.summary,
+      review: look.review,
+    });
   }
 
-  async function plan(look: { title: string; garmentIds: string[]; why: string }) {
+  async function plan(look: CardLook) {
     const outfit = await ensureOutfit(look);
     await planDay(todayKey(), outfit.id);
     notify(`${outfit.name} is on today.`);
@@ -41,15 +50,14 @@ export function Looks() {
           category: garment.category,
           colors: garment.colors,
         })),
-        looks.map((look) => ({ title: look.title, ids: look.garmentIds, why: look.why })),
       );
       setIntro(advice.intro);
       setAiLooks(advice.outfits);
-      if (!advice.intro && advice.outfits.length === 0) {
-        setAiError("The model replied, but not with outfits made from this closet.");
+      if (advice.outfits.length === 0) {
+        setAiError("The model replied, but not with scored outfits made from this closet.");
       }
     } catch (reason) {
-      setAiError(reason instanceof Error ? reason.message : "The stylist could not answer.");
+      setAiError(reason instanceof Error ? reason.message : "The model could not answer.");
     } finally {
       setAsking(false);
     }
@@ -59,103 +67,95 @@ export function Looks() {
     <section className="page">
       <header className="page-head">
         <p className="kicker">Looks</p>
-        <h1 className="display">Outfits already in the closet.</h1>
+        <h1 className="display">Rated by the model.</h1>
         <p className="lede">
-          These are built only from pieces you have. Neutrals carry color, neighbors on the wheel stay related, and loud pairs are marked bold.
+          Every score, pro, and con comes from the model on your key. Atelier does not invent a pairing of its own.
         </p>
       </header>
 
-      {looks.length === 0 ? (
+      {!settings.apiKey ? (
         <div className="empty">
-          <h2>Not enough pieces yet</h2>
-          <p>A look needs a top and a bottom, or a dress. Add those and suggestions appear here.</p>
-          <button type="button" className="btn primary" onClick={() => go("closet")}>
-            Back to the closet
+          <h2>Add a key to get a score</h2>
+          <p>Outfit ideas, the 1 to 100 rating, and the pros and cons are written only by the model you choose.</p>
+          <button type="button" className="btn primary" onClick={() => window.dispatchEvent(new CustomEvent("atelier-settings"))}>
+            Add an API key
           </button>
         </div>
       ) : (
-        <div className="looks">
-          {looks.map((look) => (
-            <LookCard
-              key={look.id}
-              look={look}
-              urls={urls}
-              names={namesFor(look.garmentIds, garmentsById(garments))}
-              onBuild={() => {
-                setSelection(look.garmentIds);
-                go("builder");
-              }}
-              onPlan={() => void plan({ title: look.title, garmentIds: look.garmentIds, why: look.why })}
-            />
-          ))}
+        <div className="ai-panel">
+          <div>
+            <p className="kicker">Your model</p>
+            <h2>Style this closet</h2>
+            <p>Three outfits, each with a score and a list of what works and what does not.</p>
+          </div>
+          <button type="button" className="btn primary" disabled={asking || garments.length < 2} onClick={() => void ask()}>
+            {asking ? "Rating…" : "Style my closet"}
+          </button>
+          {intro && <p className="ai-intro">{intro}</p>}
+          {aiError && <p className="error">{aiError}</p>}
+          {aiLooks.length > 0 && (
+            <div className="looks">
+              {aiLooks.map((look) => (
+                <LookCard
+                  key={look.ids.join("-")}
+                  title={look.title}
+                  garmentIds={look.ids}
+                  review={look.review}
+                  urls={urls}
+                  names={namesFor(look.ids, garmentsById(garments))}
+                  onBuild={() => {
+                    setSelection(look.ids);
+                    go("builder");
+                  }}
+                  onPlan={() => void plan({ title: look.title, garmentIds: look.ids, review: look.review })}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      <section className="pairings">
-        <div className="section-head">
-          <p className="kicker">Color</p>
-          <h2>Colors that agree</h2>
-        </div>
-        {pairs.length === 0 ? (
-          <p className="hint">Add pieces in different categories to see which colors belong together.</p>
-        ) : (
-          <div className="pair-grid">
-            {pairs.map((pair) => (
-              <PairCard key={`${pair.leftId}-${pair.rightId}`} pair={pair} garments={garments} urls={urls} />
-            ))}
+      {rated.length > 0 && (
+        <section className="pairings">
+          <div className="section-head">
+            <p className="kicker">Saved</p>
+            <h2>Already rated</h2>
           </div>
-        )}
-      </section>
-
-      <section className="ai-panel">
-        <div>
-          <p className="kicker">Optional model</p>
-          <h2>Ask a stylist</h2>
-          <p>
-            The pairings above run on this device. If you add a key, a model can rewrite the advice in its own words, still using only your pieces.
-          </p>
-        </div>
-        {settings.apiKey ? (
-          <button type="button" className="btn primary" disabled={asking || garments.length < 2} onClick={() => void ask()}>
-            {asking ? "Asking…" : "Ask your stylist"}
-          </button>
-        ) : (
-          <button type="button" className="btn" onClick={() => window.dispatchEvent(new CustomEvent("atelier-settings"))}>
-            Add an API key
-          </button>
-        )}
-        {intro && <p className="ai-intro">{intro}</p>}
-        {aiError && <p className="error">{aiError}</p>}
-        {aiLooks.length > 0 && (
           <div className="looks">
-            {aiLooks.map((look) => (
+            {rated.map((outfit) => (
               <LookCard
-                key={look.ids.join("-")}
-                look={{ id: look.ids.join("-"), title: look.title, why: look.why, garmentIds: look.ids, score: 0.8, palette: [] }}
+                key={outfit.id}
+                title={outfit.name}
+                garmentIds={outfit.garmentIds}
+                review={outfit.review!}
                 urls={urls}
-                names={namesFor(look.ids, garmentsById(garments))}
+                names={namesFor(outfit.garmentIds, garmentsById(garments))}
                 onBuild={() => {
-                  setSelection(look.ids);
+                  setSelection(outfit.garmentIds);
                   go("builder");
                 }}
-                onPlan={() => void plan({ title: look.title, garmentIds: look.ids, why: look.why })}
+                onPlan={() => void plan({ title: outfit.name, garmentIds: outfit.garmentIds, review: outfit.review! })}
               />
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
     </section>
   );
 }
 
 function LookCard({
-  look,
+  title,
+  garmentIds,
+  review,
   urls,
   names,
   onBuild,
   onPlan,
 }: {
-  look: Look;
+  title: string;
+  garmentIds: string[];
+  review: OutfitReview;
   urls: Record<string, string>;
   names: string[];
   onBuild: () => void;
@@ -164,16 +164,16 @@ function LookCard({
   return (
     <article className="look">
       <div className="look-figures">
-        {look.garmentIds.map((id) => urls[id] && <img key={id} src={urls[id]} alt="" />)}
+        {garmentIds.map((id) => urls[id] && <img key={id} src={urls[id]} alt="" />)}
       </div>
       <div className="look-copy">
         <div className="stage-title">
-          <h3>{look.title}</h3>
-          {look.score > 0 && <Score value={look.score} />}
+          <h3>{title}</h3>
+          <ScoreMeter score={review.score} />
         </div>
-        <p>{look.why}</p>
+        <p>{review.summary}</p>
         <p className="hint">{names.join(" · ")}</p>
-        {look.palette.length > 0 && <Swatches colors={look.palette} />}
+        <ProsCons pros={review.pros} cons={review.cons} />
         <div className="row">
           <button type="button" className="btn primary" onClick={onPlan}>
             Wear today
@@ -183,33 +183,6 @@ function LookCard({
           </button>
         </div>
       </div>
-    </article>
-  );
-}
-
-function PairCard({
-  pair,
-  garments,
-  urls,
-}: {
-  pair: ColorPair;
-  garments: { id: string; name: string; colors: string[] }[];
-  urls: Record<string, string>;
-}) {
-  const left = garments.find((garment) => garment.id === pair.leftId);
-  const right = garments.find((garment) => garment.id === pair.rightId);
-  if (!left || !right) return null;
-  return (
-    <article className="pair">
-      <div className="pair-visual">
-        {urls[left.id] && <img src={urls[left.id]} alt="" />}
-        {urls[right.id] && <img src={urls[right.id]} alt="" />}
-      </div>
-      <div className="pair-colors">
-        <span style={{ background: left.colors[0] }} />
-        <span style={{ background: right.colors[0] }} />
-      </div>
-      <p>{pair.sentence}</p>
     </article>
   );
 }

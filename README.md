@@ -1,8 +1,8 @@
 # Atelier
 
-A digital wardrobe that stays in the browser. Photograph a piece on a plain background, or type a name such as “Knickerbocker Catskills,” and file it into a category. Build outfits from what you own, plan them on a calendar, and see which colors belong together.
+A digital wardrobe that stays in the browser. Photograph a piece on a plain background, or type a name such as “Knickerbocker Catskills,” and file it into a category. Build outfits from what you own and plan them on a calendar.
 
-A model key is optional. Without one, categorization, color pairing, and outfit suggestions run on the device. With one, new photos can be named and a stylist can rewrite the notes. The key never leaves the browser except in a request to the provider you choose.
+Outfit ideas, the 1–100 score, and the pros and cons come only from a model on a key you supply. Photos and the calendar stay on this device. The key never leaves the browser except in a request to the provider you choose.
 
 ## Run
 

@@ -5,7 +5,6 @@ import { categoryLabel } from "../types";
 import { todayKey, prettyDate } from "../lib/dates";
 import { go } from "../nav";
 import { colorName } from "../lib/color";
-import { recommendLooks } from "../lib/stylist";
 import { Swatches } from "./bits";
 import { NameComposer } from "./NameComposer";
 
@@ -37,7 +36,6 @@ export function Closet({ onOpen, onAdd }: { onOpen: (id: string) => void; onAdd:
   const today = todayKey();
   const plan = days.find((day) => day.date === today);
   const planned = plan ? outfits.find((outfit) => outfit.id === plan.outfitId) : undefined;
-  const suggestion = !planned ? recommendLooks(garments, 1)[0] : undefined;
 
   return (
     <section className="page">
@@ -57,17 +55,14 @@ export function Closet({ onOpen, onAdd }: { onOpen: (id: string) => void; onAdd:
           {planned ? (
             <>
               <h2>{planned.name}</h2>
-              <p>{planned.note || "Planned from your closet."}</p>
-            </>
-          ) : suggestion ? (
-            <>
-              <h2>{suggestion.title}</h2>
-              <p>{suggestion.why}</p>
+              <p>
+                {planned.review ? `Rated ${planned.review.score} / 100. ${planned.review.summary}` : planned.note || "Planned from your closet."}
+              </p>
             </>
           ) : (
             <>
               <h2>Nothing planned</h2>
-              <p>Add a couple of pieces and a look will land here.</p>
+              <p>Ask the model for looks, then put one on today.</p>
             </>
           )}
         </div>
@@ -78,7 +73,7 @@ export function Closet({ onOpen, onAdd }: { onOpen: (id: string) => void; onAdd:
             </button>
           ) : (
             <button type="button" className="btn" onClick={() => go("looks")}>
-              See looks you can make
+              Ask the model
             </button>
           )}
           <button type="button" className="btn primary" onClick={onAdd}>

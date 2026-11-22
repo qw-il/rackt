@@ -336,9 +336,9 @@ h1, h2, h3, p { margin: 0; }
 
 .looks, .pair-grid { display: grid; gap: 14px; }
 .look { display: grid; grid-template-columns: 220px 1fr; gap: 8px; padding: 12px; margin-bottom: 12px; }
-.look-figures, .pair-visual, .panel-pieces { display: flex; align-items: end; min-height: 180px; }
-.look-figures img, .pair-visual img, .panel-pieces img { height: 170px; width: auto; object-fit: contain; margin-right: -28px; filter: drop-shadow(0 14px 12px rgba(40,30,20,0.14)); }
-.look-copy, .pair { padding: 8px; }
+.look-figures, .pair-visual, .panel-pieces { display: flex; align-items: end; min-height: 180px; position: relative; z-index: 0; }
+.look-figures img, .pair-visual img, .panel-pieces img { height: 170px; width: auto; object-fit: contain; margin-right: -28px; filter: drop-shadow(0 14px 12px rgba(40,30,20,0.14)); pointer-events: none; }
+.look-copy, .pair { position: relative; z-index: 1; padding: 8px; }
 .pairings, .ai-panel { margin-top: 28px; }
 .section-head { margin-bottom: 12px; }
 .pair-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }

@@ -28,6 +28,9 @@ export function App() {
 function Shell() {
   const closet = useCloset();
   const [view, setView] = useState<ViewId>(readView);
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    document.documentElement.dataset.theme === "light" ? "light" : "dark",
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [studio, setStudio] = useState<{ key: number; file: File | null; refineId: string | null } | null>(null);
@@ -55,6 +58,14 @@ function Shell() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [studio]);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("atelier-theme", next);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "light" ? "#e6dfd4" : "#0c0d12");
+    setTheme(next);
+  }
 
   function openStudio(file: File | null = null, refineId: string | null = null) {
     setStudio({ key: Date.now(), file, refineId });
@@ -131,6 +142,15 @@ function Shell() {
           ))}
         </nav>
         <div className="top-actions">
+          <button
+            type="button"
+            className="btn ghost"
+            aria-pressed={theme === "dark"}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? "Light" : "Dark"}
+          </button>
           <button type="button" className="btn ghost" onClick={() => setSettingsOpen(true)}>
             {closet.settings.apiKey ? "Key saved" : "API key"}
           </button>

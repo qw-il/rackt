@@ -67,10 +67,8 @@ export function Looks() {
     <section className="page">
       <header className="page-head">
         <p className="kicker">Looks</p>
-        <h1 className="display">Rated by the model.</h1>
-        <p className="lede">
-          Every score, pro, and con comes from the model on your key. Atelier does not invent a pairing of its own.
-        </p>
+        <h1 className="display">Tonight's edit.</h1>
+        <p className="lede">Your model scores each outfit from 1 to 100 and writes the pros and cons.</p>
       </header>
 
       {!settings.apiKey ? (
@@ -163,25 +161,25 @@ function LookCard({
 }) {
   return (
     <article className="look">
-      <div className="look-figures">
+      <header className="look-top">
+        <div>
+          <h3>{title}</h3>
+          <p>{review.summary}</p>
+        </div>
+        <ScoreMeter score={review.score} />
+      </header>
+      <div className="look-stage">
         {garmentIds.map((id) => urls[id] && <img key={id} src={urls[id]} alt="" />)}
       </div>
-      <div className="look-copy">
-        <div className="stage-title">
-          <h3>{title}</h3>
-          <ScoreMeter score={review.score} />
-        </div>
-        <p>{review.summary}</p>
-        <p className="hint">{names.join(" · ")}</p>
-        <ProsCons pros={review.pros} cons={review.cons} />
-        <div className="row">
-          <button type="button" className="btn primary" onClick={onPlan}>
-            Wear today
-          </button>
-          <button type="button" className="btn" onClick={onBuild}>
-            Edit in builder
-          </button>
-        </div>
+      <p className="hint">{names.join(" · ")}</p>
+      <ProsCons pros={review.pros} cons={review.cons} />
+      <div className="row">
+        <button type="button" className="btn primary" onClick={onPlan}>
+          Wear today
+        </button>
+        <button type="button" className="btn" onClick={onBuild}>
+          Edit in builder
+        </button>
       </div>
     </article>
   );

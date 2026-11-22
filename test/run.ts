@@ -2,6 +2,7 @@ import { colorDistance, colorName, extractPalette, harmonyOf, pairScore, rgbToHe
 import { removeBackground, type Raster } from "../src/lib/background";
 import { suggestCategory } from "../src/lib/categorize";
 import { presentName, readNamedPiece } from "../src/lib/namedPiece";
+import { parseBingImagePage, pieceSearchQueries, rankPieceImages } from "../src/lib/webImage";
 import { colorPairings, recommendLooks } from "../src/lib/stylist";
 import { clampScore, normalizeBase, normalizeReview, parseJson } from "../src/lib/ai";
 import type { Garment } from "../src/types";
@@ -117,6 +118,17 @@ assert(typed.color === "#3c3a37", "an unrecognized name gets a wearable default 
 assert(readNamedPiece("black loafers").category === "shoes", "loafer files as shoes");
 assert(readNamedPiece("black loafers").color === "#1a1a1a", "black is read from the name");
 assert(readNamedPiece("navy oxford").category === "top", "oxford files as a top");
+assert(pieceSearchQueries("black loafers", "shoes")[0] === "black loafers shoes", "a loafer search also says shoes");
+assert(pieceSearchQueries("knickerbocker catskills", "other")[0] === "knickerbocker catskills", "an unknown name is searched as typed");
+const listing = [
+  '[![Image 1](https://th.bing.com/th/id/OIP.coat?w=200&h=200)](https://www.bing.com/images/search?mediaurl=https%3A%2F%2Fshop.example%2Fcoat.jpg&q=coat)1200×1800[theruggedsociety.com](https://theruggedsociety.com/products/knickerbocker-catskills-canvas-coat)',
+  '[![Image 2](https://th.bing.com/th/id/OIP.seal?w=200&h=200)](https://www.bing.com/images/search?mediaurl=https%3A%2F%2Fflags.example%2Fseal.jpg&q=navy)900×900[clipground.com](https://clipground.com/navy-symbol-clipart.html)',
+  '[![Image 3](https://th.bing.com/th/id/OIP.wide?w=200&h=200)](https://www.bing.com/images/search?mediaurl=https%3A%2F%2Fshop.example%2Fwide.jpg&q=wide)2400×400[shop.example](https://shop.example/knickerbocker-banner)',
+].join("\n");
+const hits = parseBingImagePage(listing);
+assert(hits.length === 3 && hits[0].host === "theruggedsociety.com", "image results keep the page and the thumbnail");
+assert(rankPieceImages(hits, "knickerbocker catskills")[0]?.page.includes("catskills-canvas-coat"), "a typed name prefers the matching product photo");
+assert(rankPieceImages(hits, "navy oxford").length === 0, "a seal or a banner is not used as the piece");
 
 if (failed) {
   console.error(`${failed} failed`);

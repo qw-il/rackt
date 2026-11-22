@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCloset } from "../store";
 import type { Category } from "../types";
 import { categoryLabel } from "../types";
 import { identifyNamedPiece } from "../lib/ai";
 import { namedGarment, namedPreview, PIECE_COLORS, presentName, readNamedPiece } from "../lib/namedPiece";
+import { findPiecePhoto, type PiecePhoto } from "../lib/webImage";
 import { CategoryChips } from "./bits";
 
 export function NameComposer({ onAdded }: { onAdded?: () => void }) {
@@ -15,6 +16,11 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [photo, setPhoto] = useState<PiecePhoto | null>(null);
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [looking, setLooking] = useState(false);
+  const request = useRef(0);
+  const pending = useRef<Promise<PiecePhoto | null> | null>(null);
   const guess = readNamedPiece(text);
   const typed = presentName(text);
   const category = categoryPick ?? (typed ? guess.category : null);
@@ -22,7 +28,43 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
   const swatches = PIECE_COLORS.some((swatch) => swatch.hex === color)
     ? PIECE_COLORS
     : [{ name: "Suggested", hex: color }, ...PIECE_COLORS];
-  const preview = typed && category ? namedPreview(category, color) : "";
+  const preview = photoUrl || (typed && category ? namedPreview(category, color) : "");
+
+  useEffect(() => {
+    if (!photo) {
+      setPhotoUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(photo.blob);
+    setPhotoUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photo]);
+
+  useEffect(() => {
+    if (typed.trim().length < 3 || !category) {
+      setPhoto(null);
+      setLooking(false);
+      pending.current = null;
+      return;
+    }
+    const id = ++request.current;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLooking(true);
+      const job = findPiecePhoto(typed, category, controller.signal).catch(() => null);
+      pending.current = job;
+      void job.then((found) => {
+        if (request.current !== id) return;
+        setPhoto(found);
+        setLooking(false);
+        pending.current = null;
+      });
+    }, 550);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [typed, category]);
 
   async function identify() {
     if (!typed || !category) return;
@@ -45,13 +87,25 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
     if (!typed || !category) return;
     setSaving(true);
     try {
-      const garment = await addGarment(namedGarment(text, category, color, note));
+      let found = photo;
+      if (!found) {
+        setLooking(true);
+        if (!pending.current) pending.current = findPiecePhoto(typed, category).catch(() => null);
+        found = await pending.current;
+        setPhoto(found);
+        setLooking(false);
+      }
+      const colors = colorPick ? [color] : found?.colors?.length ? found.colors : [color];
+      const credit = found ? `Photo from ${found.host}.` : "";
+      const garment = await addGarment(namedGarment(text, category, color, note || credit, found?.blob, colors));
       notify(`Added ${garment.name} to ${categoryLabel(garment.category).toLowerCase()}.`);
       setText("");
       setCategoryPick(null);
       setColorPick(null);
       setNote("");
       setMessage("");
+      setPhoto(null);
+      pending.current = null;
       onAdded?.();
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Could not add that piece.");
@@ -69,7 +123,7 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
       }}
     >
       {preview && (
-        <div className="composer-preview floor">
+        <div className="composer-preview">
           <img src={preview} alt="" />
         </div>
       )}
@@ -88,6 +142,7 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
               setColorPick(null);
               setNote("");
               setMessage("");
+              setPhoto(null);
             }}
           />
         </label>
@@ -102,11 +157,15 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
             }}
           />
           <p className="hint">
-            {typed
-              ? categoryPick
-                ? `Saving as ${categoryLabel(categoryPick).toLowerCase()}.`
-                : guess.reason
-              : "A word like jacket, jean, or loafer files it. Any other name still gets added."}
+            {looking
+              ? "Pulling a clean photo from the web."
+              : photo
+                ? `Photo from ${photo.host}. ${categoryPick ? `Saving as ${categoryLabel(categoryPick).toLowerCase()}.` : guess.reason}`
+                : typed
+                  ? categoryPick
+                    ? `Saving as ${categoryLabel(categoryPick).toLowerCase()}. No clean photo yet, so a drawing is ready if the lookup comes up empty.`
+                    : `${guess.reason} A photo is looked up from the web.`
+                  : "A word like jacket, jean, or loafer files it. The name is used to pull a photo."}
           </p>
         </div>
         <div className="field">

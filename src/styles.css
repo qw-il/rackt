@@ -256,9 +256,14 @@ h1, h2, h3, p { margin: 0; }
 .composer-preview {
   min-height: 180px;
   border-radius: 18px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
 }
 .composer-preview img {
-  max-height: 160px;
+  max-height: 180px;
+  max-width: 100%;
+  object-fit: contain;
   filter: drop-shadow(0 16px 14px var(--drop-shadow));
 }
 

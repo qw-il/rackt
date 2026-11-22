@@ -87,15 +87,22 @@ export function readNamedPiece(raw: string): NamedGuess {
   };
 }
 
-export function namedGarment(raw: string, category: Category, color: string, note = ""): Omit<Garment, "id" | "createdAt"> {
+export function namedGarment(
+  raw: string,
+  category: Category,
+  color: string,
+  note = "",
+  image?: Blob,
+  colors?: string[],
+): Omit<Garment, "id" | "createdAt"> {
   const name = presentName(raw);
   return {
     name,
     category,
-    colors: [color],
+    colors: colors && colors.length > 0 ? colors : [color],
     note,
     sample: false,
-    image: silhouette(category, color),
+    image: image ?? silhouette(category, color),
   };
 }
 

@@ -128,7 +128,8 @@ const listing = [
 const hits = parseBingImagePage(listing);
 assert(hits.length === 3 && hits[0].host === "theruggedsociety.com", "image results keep the page and the thumbnail");
 assert(rankPieceImages(hits, "knickerbocker catskills")[0]?.page.includes("catskills-canvas-coat"), "a typed name prefers the matching product photo");
-assert(rankPieceImages(hits, "navy oxford").length === 0, "a seal or a banner is not used as the piece");
+const oxford = rankPieceImages(hits, "navy oxford");
+assert(oxford.length === 1 && oxford[0].page.includes("canvas-coat"), "seals and banners are skipped, and a real photo can still be used");
 
 if (failed) {
   console.error(`${failed} failed`);

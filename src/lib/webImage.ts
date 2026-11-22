@@ -76,10 +76,22 @@ export function parseBingImagePage(markdown: string): BingHit[] {
       media,
     });
   }
+  if (hits.length > 0) return hits;
+  const loose = /https:\/\/th\.bing\.com\/th\/id\/OIP\.[^)\s"']+/g;
+  for (const match of markdown.matchAll(loose)) {
+    hits.push({
+      thumb: match[0],
+      width: 800,
+      height: 800,
+      host: "bing.com",
+      page: match[0],
+      media: match[0],
+    });
+  }
   return hits;
 }
 
-export function rankPieceImages(hits: BingHit[], name: string): BingHit[] {
+export function rankPieceImages(hits: BingHit[], name: string, allowUnmatched = true): BingHit[] {
   const tokens = distinctiveTokens(name);
   const usable = hits.filter((hit) => {
     if (hit.width < 240 || hit.height < 240) return false;
@@ -90,34 +102,111 @@ export function rankPieceImages(hits: BingHit[], name: string): BingHit[] {
   const ranked = usable
     .map((hit, index) => ({ hit, index, score: matchScore(hit, tokens) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
-  if (tokens.length === 0) return ranked.map((item) => item.hit);
-  return ranked.filter((item) => item.score > 0).map((item) => item.hit);
+  const matched = ranked.filter((item) => item.score > 0);
+  const chosen = matched.length > 0 ? matched : allowUnmatched ? ranked : [];
+  return chosen.map((item) => item.hit);
 }
 
 export function largerThumb(url: string): string {
+  if (!url.includes("th.bing.com/th/id/")) return url;
   const parsed = new URL(url);
   parsed.searchParams.set("w", "720");
   parsed.searchParams.set("h", "720");
   return parsed.toString();
 }
 
-export async function findPiecePhoto(name: string, category: Category, signal?: AbortSignal): Promise<PiecePhoto | null> {
-  for (const query of pieceSearchQueries(name, category)) {
-    const target = `https://www.bing.com/images/search?${new URLSearchParams({ q: query, form: "HDRSC2" })}`;
-    const response = await fetch(`https://r.jina.ai/${target}`, {
-      signal: limitSignal(signal, 12000),
-      referrerPolicy: "no-referrer",
-      headers: { Accept: "text/plain" },
+export function parseCommonsPages(payload: unknown): BingHit[] {
+  if (!payload || typeof payload !== "object") return [];
+  const pages = (payload as { query?: { pages?: Record<string, CommonsPage> } }).query?.pages;
+  if (!pages) return [];
+  const hits: BingHit[] = [];
+  for (const page of Object.values(pages)) {
+    const info = page.imageinfo?.[0];
+    const thumb = info?.thumburl;
+    if (!thumb || (info?.mime && !info.mime.startsWith("image/"))) continue;
+    const title = page.title?.replace(/^File:/, "") ?? "Commons photo";
+    hits.push({
+      thumb,
+      width: info?.thumbwidth || info?.width || 800,
+      height: info?.thumbheight || info?.height || 800,
+      host: "commons.wikimedia.org",
+      page: `https://commons.wikimedia.org/wiki/${encodeURIComponent(page.title ?? title)}`,
+      media: info?.descriptionurl || thumb,
     });
-    if (!response.ok) continue;
-    const ranked = rankPieceImages(parseBingImagePage(await response.text()), name).slice(0, 4);
-    for (const hit of ranked) {
-      const photo = await downloadHit(hit, signal);
-      if (photo) return photo;
-    }
+  }
+  return hits;
+}
+
+export async function findPiecePhoto(name: string, category: Category, signal?: AbortSignal): Promise<PiecePhoto | null> {
+  const queries = pieceSearchQueries(name, category);
+  for (const query of queries) {
+    const photo = await firstDownloaded(await bingHits(query, signal), name, signal, true);
+    if (photo) return photo;
+  }
+  for (const query of queries) {
+    const photo = await firstDownloaded(await commonsHits(query, signal), name, signal, false);
+    if (photo) return photo;
   }
   return null;
 }
+
+async function bingHits(query: string, signal?: AbortSignal): Promise<BingHit[]> {
+  const target = `https://www.bing.com/images/search?${new URLSearchParams({ q: query, form: "HDRSC2" })}`;
+  const response = await fetch(`https://r.jina.ai/${target}`, {
+    signal: limitSignal(signal, 18000),
+    referrerPolicy: "no-referrer",
+    headers: { Accept: "text/plain" },
+  });
+  if (!response.ok) return [];
+  return parseBingImagePage(await response.text());
+}
+
+async function commonsHits(query: string, signal?: AbortSignal): Promise<BingHit[]> {
+  const params = new URLSearchParams({
+    action: "query",
+    format: "json",
+    origin: "*",
+    generator: "search",
+    gsrsearch: `${query} filetype:bitmap`,
+    gsrnamespace: "6",
+    gsrlimit: "8",
+    prop: "imageinfo",
+    iiprop: "url|mime|size",
+    iiurlwidth: "800",
+  });
+  const response = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+    signal: limitSignal(signal, 12000),
+    referrerPolicy: "no-referrer",
+  });
+  if (!response.ok) return [];
+  return parseCommonsPages(await response.json());
+}
+
+async function firstDownloaded(
+  hits: BingHit[],
+  name: string,
+  signal: AbortSignal | undefined,
+  allowUnmatched: boolean,
+): Promise<PiecePhoto | null> {
+  for (const hit of rankPieceImages(hits, name, allowUnmatched).slice(0, 5)) {
+    const photo = await downloadHit(hit, signal);
+    if (photo) return photo;
+  }
+  return null;
+}
+
+type CommonsPage = {
+  title?: string;
+  imageinfo?: {
+    thumburl?: string;
+    descriptionurl?: string;
+    mime?: string;
+    width?: number;
+    height?: number;
+    thumbwidth?: number;
+    thumbheight?: number;
+  }[];
+};
 
 function limitSignal(parent: AbortSignal | undefined, ms: number): AbortSignal {
   const controller = new AbortController();

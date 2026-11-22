@@ -3,7 +3,7 @@ import { useCloset } from "../store";
 import type { Category } from "../types";
 import { categoryLabel } from "../types";
 import { identifyNamedPiece } from "../lib/ai";
-import { namedGarment, namedPreview, PIECE_COLORS, presentName, readNamedPiece } from "../lib/namedPiece";
+import { namedGarment, PIECE_COLORS, presentName, readNamedPiece } from "../lib/namedPiece";
 import { findPiecePhoto, type PiecePhoto } from "../lib/webImage";
 import { CategoryChips } from "./bits";
 
@@ -19,6 +19,7 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
   const [photo, setPhoto] = useState<PiecePhoto | null>(null);
   const [photoUrl, setPhotoUrl] = useState("");
   const [looking, setLooking] = useState(false);
+  const [miss, setMiss] = useState(false);
   const request = useRef(0);
   const pending = useRef<Promise<PiecePhoto | null> | null>(null);
   const guess = readNamedPiece(text);
@@ -28,7 +29,7 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
   const swatches = PIECE_COLORS.some((swatch) => swatch.hex === color)
     ? PIECE_COLORS
     : [{ name: "Suggested", hex: color }, ...PIECE_COLORS];
-  const preview = photoUrl || (typed && category ? namedPreview(category, color) : "");
+  const preview = photoUrl;
 
   useEffect(() => {
     if (!photo) {
@@ -41,8 +42,9 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
   }, [photo]);
 
   useEffect(() => {
+    setPhoto(null);
+    setMiss(false);
     if (typed.trim().length < 3 || !category) {
-      setPhoto(null);
       setLooking(false);
       pending.current = null;
       return;
@@ -50,16 +52,18 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
     const id = ++request.current;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      if (controller.signal.aborted) return;
       setLooking(true);
       const job = findPiecePhoto(typed, category, controller.signal).catch(() => null);
       pending.current = job;
       void job.then((found) => {
-        if (request.current !== id) return;
+        if (request.current !== id || controller.signal.aborted) return;
         setPhoto(found);
+        setMiss(!found);
         setLooking(false);
         pending.current = null;
       });
-    }, 550);
+    }, 450);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
@@ -88,16 +92,21 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
     setSaving(true);
     try {
       let found = photo;
-      if (!found) {
+      if (!found?.blob && pending.current) {
         setLooking(true);
-        if (!pending.current) pending.current = findPiecePhoto(typed, category).catch(() => null);
         found = await pending.current;
         setPhoto(found);
         setLooking(false);
       }
-      const colors = colorPick ? [color] : found?.colors?.length ? found.colors : [color];
-      const credit = found ? `Photo from ${found.host}.` : "";
-      const garment = await addGarment(namedGarment(text, category, color, note || credit, found?.blob, colors));
+      if (!found?.blob) {
+        setMiss(true);
+        setMessage("No online photo for that name.");
+        return;
+      }
+      const colors = colorPick ? [color] : found.colors.length ? found.colors : [color];
+      const garment = await addGarment(
+        namedGarment(text, category, color, note || `Photo from ${found.host}.`, found.blob, colors),
+      );
       notify(`Added ${garment.name} to ${categoryLabel(garment.category).toLowerCase()}.`);
       setText("");
       setCategoryPick(null);
@@ -105,6 +114,7 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
       setNote("");
       setMessage("");
       setPhoto(null);
+      setMiss(false);
       pending.current = null;
       onAdded?.();
     } catch (reason) {
@@ -143,6 +153,7 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
               setNote("");
               setMessage("");
               setPhoto(null);
+              setMiss(false);
             }}
           />
         </label>
@@ -158,14 +169,12 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
           />
           <p className="hint">
             {looking
-              ? "Pulling a clean photo from the web."
+              ? "Looking up an online photo."
               : photo
                 ? `Photo from ${photo.host}. ${categoryPick ? `Saving as ${categoryLabel(categoryPick).toLowerCase()}.` : guess.reason}`
-                : typed
-                  ? categoryPick
-                    ? `Saving as ${categoryLabel(categoryPick).toLowerCase()}. No clean photo yet, so a drawing is ready if the lookup comes up empty.`
-                    : `${guess.reason} A photo is looked up from the web.`
-                  : "A word like jacket, jean, or loafer files it. The name is used to pull a photo."}
+                : miss
+                  ? "No online photo for that name. Try a more specific one."
+                  : "Only an online photo can be added. A word like jacket or loafer also files the category."}
           </p>
         </div>
         <div className="field">
@@ -185,8 +194,8 @@ export function NameComposer({ onAdded }: { onAdded?: () => void }) {
           </div>
         </div>
         <div className="row">
-          <button type="submit" className="btn primary" disabled={!typed || !category || saving}>
-            {saving ? "Adding…" : "Add to wardrobe"}
+          <button type="submit" className="btn primary" disabled={!photo || looking || saving}>
+            {looking ? "Looking up a photo…" : saving ? "Adding…" : "Add to wardrobe"}
           </button>
           {settings.apiKey && (
             <button type="button" className="btn" disabled={!typed || reading} onClick={() => void identify()}>
